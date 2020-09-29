@@ -2,55 +2,53 @@
  * Copyright 2020, Yahoo Holdings Inc.
  * Licensed under the terms of the MIT license. See accompanying LICENSE.md file for terms.
  *
- * {{navi-visualization-config/series-chart
- *    request=request
- *    response=response
- *    seriesConfig=seriesConfig
- *    seriesType=seriesType
- *    onUpdateConfig=(action "onUpdateConfig")
- * }}
+ * <NaviVisualizationConfig::SeriesChart
+ *    @request={{this.request}}
+ *    @response={{this.response}}
+ *    @seriesConfig={{this.seriesConfig}}
+ *    @seriesType={{this.seriesType}}
+ *    @onUpdateConfig={{this.onUpdateConfig}}
+ * />
  */
-
 import { assign } from '@ember/polyfills';
 import { A as arr } from '@ember/array';
-import Component from '@ember/component';
+import Component from '@glimmer/component';
 import { set, get, computed, action } from '@ember/object';
 import { readOnly } from '@ember/object/computed';
 import { isArray } from '@ember/array';
 import { copy } from 'ember-copy';
 import { dataByDimensions } from 'navi-core/utils/data';
-import layout from '../../templates/components/navi-visualization-config/series-chart';
 import { values, reject } from 'lodash-es';
-import { layout as templateLayout, tagName } from '@ember-decorators/component';
 
-@templateLayout(layout)
-@tagName('')
-class NaviVisualizationConfigSeriesChartComponent extends Component {
+export default class NaviVisualizationConfigSeriesChartComponent extends Component {
   /**
    * @property {Array} metrics
    */
-  @readOnly('request.metricColumns') metrics;
+  @readOnly('args.request.metricColumns') metrics;
 
   /**
    * @property {Object} selectedMetric
    */
-  @readOnly('seriesConfig.metric') selectedMetric;
+  @computed('args.seriesConfig.metric')
+  get selectedMetric() {
+    return this.metrics.find(({ cid }) => cid === this.args.seriesConfig.metric);
+  }
 
   /**
    * @property {Boolean} showMetricSelect - whether to display the metric select
    */
-  @computed('metrics', 'seriesType')
+  @computed('metrics', 'args.seriesType')
   get showMetricSelect() {
-    const { metrics, seriesType } = this;
-    return seriesType === 'dimension' && isArray(metrics) && metrics.length > 1;
+    const { metrics } = this;
+    return this.args.seriesType === 'dimension' && isArray(metrics) && metrics.length > 1;
   }
 
   /**
    * @property {Array} dimensions
    */
-  @computed('request')
+  @computed('args.request')
   get dimensions() {
-    return this.request.columns
+    return this.args.request.columns
       .filter(c => c.type === 'dimension' || (c.type === 'timeDimension' && c.field !== 'dateTime'))
       .map(c => c.columnMetadata);
   }
@@ -58,9 +56,9 @@ class NaviVisualizationConfigSeriesChartComponent extends Component {
   /**
    * @property {DataGroup} dataByDimensions - response data grouped by dimension composite keys
    */
-  @computed('seriesConfig', 'response')
+  @computed('args.{response,seriesConfig}')
   get dataByDimensions() {
-    return dataByDimensions(this.response, this.seriesConfig.dimensionOrder);
+    return dataByDimensions(this.args.response, this.args.seriesConfig.dimensionOrder);
   }
 
   /**
@@ -132,10 +130,10 @@ class NaviVisualizationConfigSeriesChartComponent extends Component {
    * @property {Array} selectedSeriesData - selected chart series data in the form:
    * [{searchKey: '...', dimensions: [{dimension: dimModel, value: {id: dimValueId, description: dimValDesc}}, ...]}, ...]
    */
-  @computed('seriesConfig')
+  @computed('args.seriesConfig')
   get selectedSeriesData() {
-    let dimensionOrder = get(this, 'seriesConfig.dimensionOrder'),
-      selectedDimensions = get(this, 'seriesConfig.dimensions');
+    let dimensionOrder = get(this, 'args.seriesConfig.dimensionOrder'),
+      selectedDimensions = get(this, 'args.seriesConfig.dimensions');
 
     let keys = arr(selectedDimensions)
       .mapBy('values')
@@ -150,7 +148,7 @@ class NaviVisualizationConfigSeriesChartComponent extends Component {
   @action
   onAddSeries(series) {
     const newSeriesConfig = copy(this.seriesConfig);
-    const { onUpdateConfig: handleUpdateConfig } = this;
+    const { onUpdateConfig: handleUpdateConfig } = this.args;
 
     arr(newSeriesConfig.dimensions).pushObject(series.config);
     if (handleUpdateConfig) handleUpdateConfig(newSeriesConfig);
@@ -162,8 +160,8 @@ class NaviVisualizationConfigSeriesChartComponent extends Component {
    */
   @action
   onRemoveSeries(series) {
-    const seriesInConfig = this.seriesConfig?.dimensions;
-    const newSeriesConfig = copy(this.seriesConfig);
+    const seriesInConfig = this.args.seriesConfig?.dimensions;
+    const newSeriesConfig = copy(this.args.seriesConfig);
     const { onUpdateConfig: handleUpdateConfig } = this;
 
     //remove series from config
@@ -182,5 +180,3 @@ class NaviVisualizationConfigSeriesChartComponent extends Component {
     this.onUpdateConfig(newConfig);
   }
 }
-
-export default NaviVisualizationConfigSeriesChartComponent;

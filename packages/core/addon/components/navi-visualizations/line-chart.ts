@@ -3,26 +3,26 @@
  * Licensed under the terms of the MIT license. See accompanying LICENSE.md file for terms.
  *
  * Usage:
- * {{navi-visualizations/line-chart
- *   model=model
- *   options=options
- * }}
+ * <NaviVisualizations::LineChart
+ *   @model={{this.model}}
+ *   @options={{this.options}}
+ * />
  */
-
-import { A as arr } from '@ember/array';
 import Component from '@ember/component';
 import { computed } from '@ember/object';
+import { assert } from '@ember/debug';
 import { readOnly } from '@ember/object/computed';
 import { getOwner } from '@ember/application';
 import { guidFor } from '@ember/object/internals';
-import { inject as service } from '@ember/service';
-import layout from '../../templates/components/navi-visualizations/line-chart';
 import numeral from 'numeral';
 import { merge } from 'lodash-es';
 import moment from 'moment';
 import { run } from '@ember/runloop';
-import hasChartBuilders from 'navi-core/mixins/components/has-chart-builders';
-import { layout as templateLayout, tagName } from '@ember-decorators/component';
+import ChartBuildersBase from './chart-builders-base';
+import { VisualizationModel } from './table';
+import BaseChartBuilder from 'navi-core/chart-builders/base';
+import { ResponseV1 } from 'navi-data/addon/serializers/facts/interface';
+import RequestFragment from 'navi-core/models/bard-request-v2/request';
 
 const DEFAULT_OPTIONS = {
   style: {
@@ -47,7 +47,7 @@ const DEFAULT_OPTIONS = {
         }
       },
       tick: {
-        format: val => numeral(val).format('0.00a'),
+        format: (val: number) => numeral(val).format('0.00a'),
         count: 4
       },
       label: {
@@ -66,22 +66,20 @@ const DEFAULT_OPTIONS = {
   }
 };
 
-@templateLayout(layout)
-@tagName('')
-export default class LineChart extends Component.extend(hasChartBuilders) {
-  /**
-   * @property {Service} metricName
-   */
-  @service
-  metricName;
+export type Args = {
+  model: VisualizationModel;
+  options: any;
+  // options: TableVisualizationMetadata['metadata'];
+};
 
+export default class LineChart extends ChartBuildersBase<Args> {
   /**
-   * @property {String} chartType - the type of c3 chart
+   * the type of c3 chart
    */
   chartType = 'line';
 
   /**
-   * @property {Array} classNames - since line-chart is a tagless wrapper component,
+   * since line-chart is a tagless wrapper component,
    * classes specified here are applied to the underlying c3-chart component
    */
   classNames = ['line-chart-widget'];
@@ -90,32 +88,28 @@ export default class LineChart extends Component.extend(hasChartBuilders) {
    * @property {Object} builder - builder based on series type
    */
   @computed('seriesConfig.type')
-  get builder() {
+  get builder(): BaseChartBuilder {
     const {
       seriesConfig: { type },
       chartBuilders
     } = this;
 
-    return chartBuilders[type];
+    const chartBuilder = chartBuilders[type];
+    assert(`There should be a chart-builder for ${type}`, chartBuilder);
+    return chartBuilder;
   }
-
-  /**
-   * @property {String} namespace - metadata namespace to use
-   */
-  @readOnly('firstModel.request.dataSource')
-  namespace;
 
   /**
    * @property {Object} config - config options for the chart
    */
-  @computed('options', 'dataConfig')
+  @computed('args.options', 'dataConfig')
   get config() {
     const { pointConfig: point } = this;
     //deep merge DEFAULT_OPTIONS, custom options, and data
     return merge(
       {},
       DEFAULT_OPTIONS,
-      this.options,
+      this.args.options,
       this.dataConfig,
       this.dataSelectionConfig,
       { tooltip: this.chartTooltip },
@@ -130,9 +124,9 @@ export default class LineChart extends Component.extend(hasChartBuilders) {
   /**
    * @property {Object} yAxisLabelConfig - y axis label config options for the chart
    */
-  @computed('options')
   get yAxisLabelConfig() {
-    const { metricDisplayName } = this;
+    let metricDisplayName = null;
+    // TODO get metric display name
     return metricDisplayName
       ? {
           axis: {
@@ -147,47 +141,24 @@ export default class LineChart extends Component.extend(hasChartBuilders) {
   }
 
   /**
-   * @property {String} metricDisplayName - display name for the current metric in a non-metric chart
-   */
-  @computed('options', 'namespace')
-  get metricDisplayName() {
-    const {
-      seriesConfig: {
-        config: { metric }
-      },
-      metricName
-    } = this;
-
-    if (metric) {
-      return metricName.getDisplayName(metric, this.namespace);
-    }
-    return undefined;
-  }
-
-  /**
    * @property {Object} seriesConfig - options for determining chart series
    */
-  @computed('options')
+  @computed('args.options')
   get seriesConfig() {
-    const optionsWithDefault = merge({}, DEFAULT_OPTIONS, this.options);
+    const optionsWithDefault = merge({}, DEFAULT_OPTIONS, this.args.options);
 
     return optionsWithDefault.axis.y.series;
   }
 
-  /**
-   * @property {Object} firstModel - the first model in the model array
-   */
-  @computed('model.[]')
-  get firstModel() {
-    return arr(this.model).firstObject;
-  }
+  @readOnly('args.model.0.request') request!: RequestFragment;
+  @readOnly('args.model.0.response') response!: ResponseV1;
 
   /**
-   * @property {Object} pointConfig - point radius config options for chart
+   * point radius config options for chart
    */
-  @computed('firstModel')
+  @computed('response.rows.length')
   get pointConfig() {
-    const pointCount = this.firstModel?.response.rows.length;
+    const pointCount = this.response.rows.length;
 
     //set point radius higher for single data
     if (pointCount === 1) {
@@ -200,24 +171,21 @@ export default class LineChart extends Component.extend(hasChartBuilders) {
   /**
    * @property {Array} seriesData - chart series data
    */
-  @computed('firstModel', 'builder', 'seriesConfig')
+  @computed('request', 'response', 'builder', 'seriesConfig.config')
   get seriesData() {
-    const request = this.firstModel?.request;
-    const rows = this.firstModel?.response.rows;
-    const builder = this.builder;
-    const seriesConfig = this.seriesConfig.config;
-    return builder.buildData(rows, seriesConfig, request);
+    const { request, response, builder, seriesConfig } = this;
+    return builder.buildData(response, seriesConfig.config, request);
   }
 
   /**
    * @property {Array} seriesDataGroups - chart series groups for stacking
    */
-  @computed('options', 'seriesConfig', 'namespace')
+  @computed('args.options', 'seriesConfig', 'namespace')
   get seriesDataGroups() {
-    const seriesConfig = this.seriesConfig;
+    const { request, seriesConfig } = this;
     const seriesType = seriesConfig.type;
-    const options = merge({}, DEFAULT_OPTIONS, this.options);
-    const { stacked } = options.style;
+    const newOptions = merge({}, DEFAULT_OPTIONS, this.args.options);
+    const { stacked } = newOptions.style;
 
     if (!stacked) {
       return [];
@@ -227,7 +195,7 @@ export default class LineChart extends Component.extend(hasChartBuilders) {
     if (seriesType === 'dimension') {
       return [seriesConfig.config.dimensions.map(dimension => dimension.name)];
     } else if (seriesType === 'metric') {
-      return [seriesConfig.config.metrics.map(metric => this.metricName.getDisplayName(metric, this.namespace))];
+      return [request.metricColumns.map(c => c.displayName)];
     }
 
     return [];
@@ -262,9 +230,9 @@ export default class LineChart extends Component.extend(hasChartBuilders) {
   /**
    * @property {String} c3ChartType - c3 chart type to determine line behavior
    */
-  @computed('options', 'chartType')
+  @computed('args.options', 'chartType')
   get c3ChartType() {
-    const options = merge({}, DEFAULT_OPTIONS, this.options),
+    const options = merge({}, DEFAULT_OPTIONS, this.args.options),
       { curve, area } = options.style;
 
     if (curve === 'line') {
@@ -279,10 +247,10 @@ export default class LineChart extends Component.extend(hasChartBuilders) {
   /**
    * @property {Object} dataSelectionConfig - config for selecting data points on chart
    */
-  @computed('model.[]')
+  @computed('args.model.[]')
   get dataSelectionConfig() {
     // model is an array, and object at index 1 is insights data promise
-    const insights = this.model.objectAt(1);
+    const insights = this.args.model.objectAt(1);
     return insights ? { dataSelection: insights } : {};
   }
 
@@ -301,15 +269,18 @@ export default class LineChart extends Component.extend(hasChartBuilders) {
    */
   @computed('firstModel', 'dataConfig')
   get tooltipComponent() {
-    const request = this.firstModel?.request;
-    const seriesConfig = this.seriesConfig.config;
+    const { request, seriesConfig } = this;
     const tooltipComponentName = this.tooltipComponentName;
     const registryEntry = `component:${tooltipComponentName}`;
     const builder = this.builder;
     const owner = getOwner(this);
-    const tooltipComponent = Component.extend(owner.ownerInjection(), builder.buildTooltip(seriesConfig, request), {
-      renderer: owner.lookup('renderer:-dom')
-    });
+    const tooltipComponent = Component.extend(
+      owner.ownerInjection(),
+      builder.buildTooltip(seriesConfig.config, request),
+      {
+        renderer: owner.lookup('renderer:-dom')
+      }
+    );
 
     if (!owner.lookup(registryEntry)) {
       owner.register(registryEntry, tooltipComponent);
@@ -347,13 +318,13 @@ export default class LineChart extends Component.extend(hasChartBuilders) {
   /**
    * @property {Object} xAxisTickValues - explicity specifies x axis tick positions for year chart grain
    */
-  @computed('model.firstObject', 'seriesConfig')
+  @computed('args.model.firstObject', 'seriesConfig')
   get xAxisTickValues() {
     const chartGrain = this.seriesConfig.config.timeGrain;
     if (chartGrain !== 'year') {
       return {};
     }
-    const requestGrain = this.model?.firstObject?.request?.logicalTable?.timeGrain;
+    const requestGrain = this.request?.timeGrain;
 
     const values = this.xAxisTickValuesByGrain[requestGrain];
     return {
@@ -376,7 +347,7 @@ export default class LineChart extends Component.extend(hasChartBuilders) {
   get chartTooltip() {
     const rawData = this.dataConfig.data?.json;
     const tooltipComponent = this.tooltipComponent;
-    const request = this.firstModel?.request;
+    const request = this.request;
     const seriesConfig = this.seriesConfig.config;
 
     return {
@@ -406,15 +377,13 @@ export default class LineChart extends Component.extend(hasChartBuilders) {
   }
 
   /**
-   * @property {Function} formattingFunction
-   * @callback formattingFunction
-   * @param {Number} val - number to format
-   * @returns {Number} - formatted number
+   * @param  val - number to format
+   * @returns  formatted number
    */
-  formattingFunction = val => numeral(val).format('0.00a');
+  formattingFunction = (val: number) => numeral(val).format('0.00a');
 
   /**
-   * @property {Object} yAxisDataFormat - adds the formattingFunction to the chart config
+   * adds the formattingFunction to the chart config
    */
   @computed('formattingFunction')
   get yAxisDataFormat() {
@@ -442,10 +411,8 @@ export default class LineChart extends Component.extend(hasChartBuilders) {
 
   /**
    * Removes tooltip component from registry
-   * @method _removeTooltipFromRegistry
-   * @private
    */
-  _removeTooltipFromRegistry() {
+  private _removeTooltipFromRegistry() {
     const tooltipComponentName = this.tooltipComponentName;
     getOwner(this).unregister(`component:${tooltipComponentName}`);
   }

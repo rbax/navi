@@ -5,11 +5,13 @@
 
 import { readOnly } from '@ember/object/computed';
 import { set, get, computed } from '@ember/object';
-import DS from 'ember-data';
+import { attr } from '@ember-data/model';
 import VisualizationBase from './visualization';
 import ChartVisualization from 'navi-core/mixins/models/chart-visualization';
 import { validator, buildValidations } from 'ember-cp-validations';
 import { METRIC_SERIES, DIMENSION_SERIES, DATE_TIME_SERIES, chartTypeForRequest } from 'navi-core/utils/chart-data';
+import RequestFragment from './bard-request-v2/request';
+import { ResponseV1 } from 'navi-data/serializers/facts/interface';
 
 const SERIES_PATH = 'metadata.axis.y.series';
 const CONFIG_PATH = `${SERIES_PATH}.config`;
@@ -81,23 +83,17 @@ const Validations = buildValidations(
   }
 );
 
-export default VisualizationBase.extend(Validations, ChartVisualization, {
-  type: DS.attr('string', { defaultValue: 'line-chart' }),
-  version: DS.attr('number', { defaultValue: 1 }),
-  metadata: DS.attr({
+export default class LineChartVisualization extends VisualizationBase.extend(Validations, ChartVisualization) {
+  @attr('string', { defaultValue: 'line-chart' })
+  type!: string;
+  @attr('number', { defaultValue: 1 })
+  version!: number;
+  @attr({
     defaultValue: () => {
-      return {
-        axis: {
-          y: {
-            series: {
-              type: null,
-              config: {}
-            }
-          }
-        }
-      };
+      return { axis: { y: { series: { type: null, config: {} } } } };
     }
-  }),
+  })
+  metadata!: unknown;
 
   /**
    * Rebuild config based on request and response
@@ -107,7 +103,7 @@ export default VisualizationBase.extend(Validations, ChartVisualization, {
    * @param {Object} response - response object
    * @return {Object} this object
    */
-  rebuildConfig(request, response) {
+  rebuildConfig(request: RequestFragment, response: ResponseV1) {
     this.isValidForRequest(request);
 
     let chartType = chartTypeForRequest(request),
@@ -122,4 +118,4 @@ export default VisualizationBase.extend(Validations, ChartVisualization, {
     });
     return this;
   }
-});
+}

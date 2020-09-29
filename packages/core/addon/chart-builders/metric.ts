@@ -20,40 +20,36 @@ import tooltipLayout from '../templates/chart-tooltips/metric';
 import ChartAxisDateTimeFormats from 'navi-core/utils/chart-axis-date-time-formats';
 import DataGroup from 'navi-core/utils/classes/data-group';
 import { API_DATE_FORMAT_STRING } from 'navi-data/utils/date';
-import EmberObject, { set, computed } from '@ember/object';
+import { computed } from '@ember/object';
 import { ResponseV1 } from 'navi-data/serializers/facts/interface';
 import RequestFragment from 'navi-core/models/bard-request-v2/request';
+import BaseChartBuilder from './base';
+import { tracked } from '@glimmer/tracking';
 
 type ResponseRow = ResponseV1['rows'][number];
 
-export default class MetricChartBuilder extends EmberObject {
-  byXSeries?: DataGroup<ResponseRow>;
+export default class MetricChartBuilder extends BaseChartBuilder {
+  @tracked byXSeries?: DataGroup<ResponseRow>;
 
   /**
-   * @param row - single row of fact data
-   * @returns name of x value given row belongs to
+   * @inheritdoc
    */
-  getXValue(row: ResponseRow, timeGrainColumn: string): string {
+  getXValue(row: ResponseRow, _config: unknown, request: RequestFragment): string {
     // expects timeGrainColumn values to be a readable moment input
-    const date = row[timeGrainColumn] as MomentInput;
+    const date = row[request.timeGrainColumn.canonicalName] as MomentInput;
     return moment(date).format(API_DATE_FORMAT_STRING);
   }
 
   /**
-   * @function buildData
-   * @param {Object} data - response from fact service
-   * @param {Object} config
-   * @param {Array} config.metrics - list of metrics to chart
-   * @param {Object} request - request used to get data
-   * @returns {Array} array of c3 data with x values
+   * @inheritdoc
    */
-  buildData(data: ResponseV1['rows'], _config: unknown, request: RequestFragment) {
+  buildData(response: ResponseV1, config: unknown, request: RequestFragment) {
     const timeGrainColumn = request.timeGrainColumn.canonicalName;
     const { timeGrain, interval } = request;
     assert('request should have an interval', interval);
     assert('request should have a timeGrain', timeGrain);
     // Group data by x axis value in order to lookup row data when building tooltip
-    set(this, 'byXSeries', new DataGroup(data, (row: ResponseRow) => this.getXValue(row, timeGrainColumn)));
+    this.byXSeries = new DataGroup(response.rows, (row: ResponseRow) => this.getXValue(row, config, request));
 
     // Support different `dateTime` formats by mapping them to a standard
     const buildDateKey = (dateTime: MomentInput) => moment(dateTime).format(API_DATE_FORMAT_STRING);
@@ -63,7 +59,9 @@ export default class MetricChartBuilder extends EmberObject {
      * and group data by date for easier lookup
      */
     const dates = interval.getDatesForInterval(timeGrain);
-    const byDate = new DataGroup(data, (row: ResponseRow) => buildDateKey(row[timeGrainColumn] as MomentInput));
+    const byDate = new DataGroup(response.rows, (row: ResponseRow) =>
+      buildDateKey(row[timeGrainColumn] as MomentInput)
+    );
 
     // Make a data point for each date in the request, so c3 can correctly show gaps in the chart
     return dates.map(date => {
@@ -90,8 +88,7 @@ export default class MetricChartBuilder extends EmberObject {
   }
 
   /**
-   * @function buildTooltip
-   * @returns {Object} layout for tooltip
+   * @inheritdoc
    */
   buildTooltip(_config: unknown, _request: RequestFragment) {
     // eslint-disable-next-line @typescript-eslint/no-this-alias

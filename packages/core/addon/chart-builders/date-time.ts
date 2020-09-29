@@ -14,11 +14,15 @@
  *   }
  */
 import Mixin from '@ember/object/mixin';
-import moment from 'moment';
+import moment, { MomentInput } from 'moment';
+//@ts-ignore
 import tooltipLayout from '../templates/chart-tooltips/date';
 import DataGroup from 'navi-core/utils/classes/data-group';
-import EmberObject, { set, computed } from '@ember/object';
-import { canonicalizeMetric } from 'navi-data/utils/metric';
+import { computed } from '@ember/object';
+import RequestFragment from 'navi-core/models/bard-request-v2/request';
+import BaseChartBuilder from './base';
+import { tracked } from '@glimmer/tracking';
+import { ResponseV1 } from 'navi-data/addon/serializers/facts/interface';
 
 const API_DATE_FORMAT = 'YYYY-MM-DD HH:mm:ss.SSS';
 const YEAR_WITH_53_ISOWEEKS = '2015-01-01';
@@ -122,17 +126,17 @@ export const GROUP = {
 /**
  * Group data by series, then x value, in order to easily build c3's json format
  *
- * @function _groupDataBySeries
- * @param {Array} data - rows of chart data to group
- * @param {String} metric - metric name
- * @param {Object} grouper - series grouping logic
- * @returns {Object} metric value grouped by series and x value
+ * @param data - rows of chart data to group
+ * @param timeGrainColumn - time grain column to use name
+ * @param metric - metric name
+ * @param grouper - series grouping logic
+ * @returns metric value grouped by series and x value
  */
-const _groupDataBySeries = (data, metric, grouper) => {
+const _groupDataBySeries = (data: ResponseRow[], timeGrainColumn: string, metric: string, grouper) => {
   return data.reduce((map, row) => {
-    let dateTime = moment(row.dateTime, API_DATE_FORMAT),
-      series = grouper.getSeries(dateTime),
-      x = grouper.getXValue(dateTime);
+    const date = moment(row[timeGrainColumn] as MomentInput, API_DATE_FORMAT);
+    const series = grouper.getSeries(date);
+    const x = grouper.getXValue(date);
 
     if (!map[series]) {
       map[series] = {};
@@ -153,7 +157,7 @@ const _groupDataBySeries = (data, metric, grouper) => {
  * @returns {Array} array of c3 data with x values
  */
 const _buildDataRows = (seriesMap, grouper) => {
-  let _buildRow = x => {
+  let _buildRow = (x: number) => {
     let row = {
       x: {
         rawValue: x,
@@ -163,7 +167,7 @@ const _buildDataRows = (seriesMap, grouper) => {
 
     // Add each series to the row
     Object.keys(seriesMap).forEach(series => {
-      const val = seriesMap[series][x.toString()];
+      const val = seriesMap[series][`${x}`];
       row[series] = typeof val === 'number' ? val : null; // c3 wants `null` for empty data points
     });
 
@@ -186,70 +190,54 @@ const _buildDataRows = (seriesMap, grouper) => {
  * @param {Object} config - series config
  * @returns {Object} grouper for request and config
  */
-const _getGrouper = (request, config) => {
-  const { timeGrain } = request.logicalTable,
-    seriesTimeGrain = config.timeGrain;
+const _getGrouper = (request: RequestFragment, config: unknown) => {
+  const { timeGrain } = request;
+  const seriesTimeGrain = config.timeGrain;
 
   return GROUP[timeGrain].by[seriesTimeGrain];
 };
 
-export default EmberObject.extend({
-  /**
-   * @method getSeriesName
-   * @param {Object} row - single row of fact data
-   * @param {Object} config - series config
-   * @param {Object} request - request used to query fact data
-   * @returns {String} name of series given row belongs to
-   */
-  getSeriesName(row, config, request) {
-    let grouper = _getGrouper(request, config);
+type ResponseRow = ResponseV1['rows'][number];
 
-    return grouper.getSeries(moment(row.dateTime));
-  },
+export default class TimeChartBuilder extends BaseChartBuilder {
+  @tracked byXSeries?: DataGroup<ResponseRow>;
 
   /**
-   * @method getXValue
-   * @param {Object} row - single row of fact data
-   * @param {Object} config - series config
-   * @param {Object} request - request used to query fact data
-   * @returns {String} name of x value given row belongs to
+   * @param row - single row of fact data
+   * @param config - series config
+   * @param request - request used to query fact data
+   * @returns name of series given row belongs to
    */
-  getXValue(row, config, request) {
-    let grouper = _getGrouper(request, config);
+  getSeriesName(row: ResponseRow, config: unknown, request: RequestFragment): string {
+    const date = row[request.timeGrainColumn.canonicalName] as MomentInput;
+    return _getGrouper(request, config).getSeries(moment(date));
+  }
 
-    return grouper.getXValue(moment(row.dateTime));
-  },
+  getXValue(row: ResponseRow, config: unknown, request: RequestFragment): string {
+    const date = row[request.timeGrainColumn.canonicalName] as MomentInput;
+    return _getGrouper(request, config).getXValue(moment(date));
+  }
 
-  /**
-   * @function buildData
-   * @param {Object} data - rows of chart data to group
-   * @param {Object} config
-   * @param {String} config.timeGrain - unit of time each series will span
-   * @param {String} config.metric - metric to chart
-   * @param {Object} request - request used to get data
-   * @returns {Array} array of c3 data with x values
-   */
-  buildData(data, config, request) {
+  buildData(response: ResponseV1, config: unknown, request: RequestFragment) {
     // Group data by x axis value + series name in order to lookup metric attributes when building tooltip
-    set(
-      this,
-      'byXSeries',
-      new DataGroup(data, row => {
-        let seriesName = this.getSeriesName(row, config, request),
-          x = this.getXValue(row, config, request);
+    this.byXSeries = new DataGroup(response.rows, row => {
+      let seriesName = this.getSeriesName(row, config, request),
+        x = this.getXValue(row, config, request);
+      return x + seriesName;
+    });
 
-        return x + seriesName;
-      })
+    const grouper = _getGrouper(request, config);
+    let { metric: metricCid } = config;
+    const metric = request.columns.find(c => c.cid === metricCid);
+
+    let seriesMap = _groupDataBySeries(
+      response.rows,
+      request.timeGrainColumn.canonicalName,
+      metric?.canonicalName,
+      grouper
     );
-
-    let { timeGrain: seriesTimeGrain, metric } = config,
-      requestTimeGrain = request.logicalTable.timeGrain,
-      grouper = GROUP[requestTimeGrain].by[seriesTimeGrain],
-      canonicalName = canonicalizeMetric(metric);
-
-    let seriesMap = _groupDataBySeries(data, canonicalName, grouper);
     return _buildDataRows(seriesMap, grouper);
-  },
+  }
 
   /**
    * @function buildTooltip
@@ -276,4 +264,4 @@ export default EmberObject.extend({
       })
     });
   }
-});
+}
