@@ -19,23 +19,19 @@ import { isArray } from '@ember/array';
 import { copy } from 'ember-copy';
 import { dataByDimensions } from 'navi-core/utils/data';
 import { values, reject } from 'lodash-es';
+import ColumnFragment from 'dummy/models/bard-request-v2/fragments/column';
+import { getRequestDimensions } from 'navi-core/utils/chart-data';
 
 export default class NaviVisualizationConfigSeriesChartComponent extends Component {
-  /**
-   * @property {Array} metrics
-   */
-  @readOnly('args.request.metricColumns') metrics;
+  @readOnly('args.request.metricColumns') metrics!: ColumnFragment[];
 
-  /**
-   * @property {Object} selectedMetric
-   */
   @computed('args.seriesConfig.metric')
   get selectedMetric() {
     return this.metrics.find(({ cid }) => cid === this.args.seriesConfig.metric);
   }
 
   /**
-   * @property {Boolean} showMetricSelect - whether to display the metric select
+   * whether to display the metric select
    */
   @computed('metrics', 'args.seriesType')
   get showMetricSelect() {
@@ -43,26 +39,21 @@ export default class NaviVisualizationConfigSeriesChartComponent extends Compone
     return this.args.seriesType === 'dimension' && isArray(metrics) && metrics.length > 1;
   }
 
-  /**
-   * @property {Array} dimensions
-   */
   @computed('args.request')
   get dimensions() {
-    return this.args.request.columns
-      .filter(c => c.type === 'dimension' || (c.type === 'timeDimension' && c.field !== 'dateTime'))
-      .map(c => c.columnMetadata);
+    return getRequestDimensions(this.args.request);
   }
 
   /**
-   * @property {DataGroup} dataByDimensions - response data grouped by dimension composite keys
+   * response data grouped by dimension composite keys
    */
   @computed('args.{response,seriesConfig}')
   get dataByDimensions() {
-    return dataByDimensions(this.args.response, this.args.seriesConfig.dimensionOrder);
+    return dataByDimensions(this.args.response, this.dimensions);
   }
 
   /**
-   * @property {Object} seriesByDimensions - series objects grouped by dimension composite keys
+   * series objects grouped by dimension composite keys
    */
   @computed('dataByDimensions')
   get seriesByDimensions() {
@@ -86,22 +77,17 @@ export default class NaviVisualizationConfigSeriesChartComponent extends Compone
 
       for (let dimIndex = 0; dimIndex < dimensions.length; dimIndex++) {
         // Pull dimension id + description from response data
-        let dimension = dimensions[dimIndex],
-          id = get(data, `0.${dimension.name}|id`),
-          description = get(data, `0.${dimension.name}|desc`);
-
-        searchKey += `${id} ${description} `;
+        const dimension = dimensions[dimIndex];
+        const value = data[0][dimension.canonicalName];
+        searchKey += `${value} `;
 
         seriesDims.push({
           dimension,
-          value: {
-            id,
-            description
-          }
+          value
         });
 
-        dimensionLabels.push(description || id);
-        assign(values, { [dimension.name]: id });
+        dimensionLabels.push(value);
+        assign(values, { [dimension.cid]: value });
       }
 
       series[key] = {
@@ -118,7 +104,7 @@ export default class NaviVisualizationConfigSeriesChartComponent extends Compone
   }
 
   /**
-   * @property {Array} allSeriesData - all possible chart series data in the form:
+   * all possible chart series data in the form:
    * [{searchKey: '...', dimensions: [{dimension: dimModel, value: {id: dimValueId, description: dimValDesc}}, ...]}, ...]
    */
   @computed('seriesByDimensions')
@@ -127,37 +113,29 @@ export default class NaviVisualizationConfigSeriesChartComponent extends Compone
   }
 
   /**
-   * @property {Array} selectedSeriesData - selected chart series data in the form:
+   * selected chart series data in the form:
    * [{searchKey: '...', dimensions: [{dimension: dimModel, value: {id: dimValueId, description: dimValDesc}}, ...]}, ...]
    */
   @computed('args.seriesConfig')
   get selectedSeriesData() {
-    let dimensionOrder = get(this, 'args.seriesConfig.dimensionOrder'),
-      selectedDimensions = get(this, 'args.seriesConfig.dimensions');
+    const { dimensions } = this;
+    const selectedDimensions = get(this, 'args.seriesConfig.dimensions');
 
     let keys = arr(selectedDimensions)
       .mapBy('values')
-      .map(value => dimensionOrder.map(dimension => value[dimension]).join('|'));
-    return keys.map(key => get(this, 'seriesByDimensions')[key]);
+      .map(value => dimensions.map(dimension => value[dimension.cid]).join('|'));
+    return keys.map(key => this.seriesByDimensions[key]);
   }
 
-  /**
-   * @method onAddSeries
-   * @param {Object} series
-   */
   @action
   onAddSeries(series) {
-    const newSeriesConfig = copy(this.seriesConfig);
+    const newSeriesConfig = copy(this.args.seriesConfig);
     const { onUpdateConfig: handleUpdateConfig } = this.args;
 
     arr(newSeriesConfig.dimensions).pushObject(series.config);
     if (handleUpdateConfig) handleUpdateConfig(newSeriesConfig);
   }
 
-  /**
-   * @method onRemoveSeries
-   * @param {Object} series
-   */
   @action
   onRemoveSeries(series) {
     const seriesInConfig = this.args.seriesConfig?.dimensions;
@@ -169,13 +147,9 @@ export default class NaviVisualizationConfigSeriesChartComponent extends Compone
     if (handleUpdateConfig) handleUpdateConfig(newSeriesConfig);
   }
 
-  /**
-   * @method onUpdateChartMetric
-   * @param {Object} metric
-   */
   @action
   onUpdateChartMetric(metric) {
-    const newConfig = copy(this.seriesConfig);
+    const newConfig = copy(this.args.seriesConfig);
     set(newConfig, `metric`, metric);
     this.onUpdateConfig(newConfig);
   }

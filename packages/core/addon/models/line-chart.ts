@@ -2,12 +2,10 @@
  * Copyright 2020, Yahoo Holdings Inc.
  * Licensed under the terms of the MIT license. See accompanying LICENSE.md file for terms.
  */
-
 import { readOnly } from '@ember/object/computed';
 import { set, get, computed } from '@ember/object';
 import { attr } from '@ember-data/model';
-import VisualizationBase from './visualization';
-import ChartVisualization from 'navi-core/mixins/models/chart-visualization';
+import ChartVisualization from './chart-visualization';
 import { validator, buildValidations } from 'ember-cp-validations';
 import { METRIC_SERIES, DIMENSION_SERIES, DATE_TIME_SERIES, chartTypeForRequest } from 'navi-core/utils/chart-data';
 import RequestFragment from './bard-request-v2/request';
@@ -27,31 +25,24 @@ const Validations = buildValidations(
     //Metric Series Validation
     [`${CONFIG_PATH}.metrics`]: validator('request-metrics', {
       disabled: computed('chartType', function() {
-        return get(this, 'chartType') !== METRIC_SERIES;
+        return this.chartType !== METRIC_SERIES;
       }),
-      dependentKeys: ['model._request.metrics.@each.parameters.{}']
+      dependentKeys: ['model._request.columns.[]']
     }),
 
     [`${CONFIG_PATH}.timeGrain`]: validator('request-time-grain', {
       disabled: computed('chartType', function() {
-        return get(this, 'chartType') !== DATE_TIME_SERIES;
+        return this.chartType !== DATE_TIME_SERIES;
       }),
-      dependentKeys: ['model._request.intervals.[]']
+      dependentKeys: ['model._request.filters.[]']
     }),
 
     //Dimension Series Validations
     [`${CONFIG_PATH}.metric`]: validator('request-metric-exist', {
       disabled: computed('chartType', function() {
-        return get(this, 'chartType') !== DIMENSION_SERIES && get(this, 'chartType') !== DATE_TIME_SERIES;
+        return this.chartType !== DIMENSION_SERIES && this.chartType !== DATE_TIME_SERIES;
       }),
-      dependentKeys: ['model._request.metrics.@each.parameters.{}']
-    }),
-
-    [`${CONFIG_PATH}.dimensionOrder`]: validator('request-dimension-order', {
-      disabled: computed('chartType', function() {
-        return get(this, 'chartType') !== DIMENSION_SERIES;
-      }),
-      dependentKeys: ['model._request.dimensions.[]']
+      dependentKeys: ['model._request.columns.[]']
     }),
 
     [`${CONFIG_PATH}.dimensions`]: [
@@ -60,16 +51,16 @@ const Validations = buildValidations(
         { min: 1 },
         {
           disabled: computed('chartType', function() {
-            return get(this, 'chartType') !== DIMENSION_SERIES;
+            return this.chartType !== DIMENSION_SERIES;
           }),
-          dependentKeys: ['model._request.dimensions.[]']
+          dependentKeys: ['model._request.columns.[]']
         }
       ),
       validator('request-filters', {
         disabled: computed('chartType', function() {
-          return get(this, 'chartType') !== DIMENSION_SERIES;
+          return this.chartType !== DIMENSION_SERIES;
         }),
-        dependentKeys: ['model._request.filters.@each.rawValues']
+        dependentKeys: ['model._request.filters.@each.values']
       })
     ]
   },
@@ -83,7 +74,7 @@ const Validations = buildValidations(
   }
 );
 
-export default class LineChartVisualization extends VisualizationBase.extend(Validations, ChartVisualization) {
+export default class LineChartVisualization extends ChartVisualization.extend(Validations) {
   @attr('string', { defaultValue: 'line-chart' })
   type!: string;
   @attr('number', { defaultValue: 1 })
@@ -106,9 +97,10 @@ export default class LineChartVisualization extends VisualizationBase.extend(Val
   rebuildConfig(request: RequestFragment, response: ResponseV1) {
     this.isValidForRequest(request);
 
-    let chartType = chartTypeForRequest(request),
-      series = this.getSeriesBuilder(chartType).call(this, CONFIG_PATH, get(this, 'validations'), request, response),
-      style = this.getWithDefault('metadata.style', {});
+    const chartType = chartTypeForRequest(request);
+    const seriesBuilder = this.getSeriesBuilder(chartType).bind(this);
+    const series = seriesBuilder(CONFIG_PATH, this.validations, request, response);
+    const style = this.getWithDefault('metadata.style', {});
 
     set(this, 'metadata', {
       style,
