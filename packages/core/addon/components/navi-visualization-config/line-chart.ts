@@ -15,17 +15,26 @@ import Component from '@glimmer/component';
 import { set, computed, action } from '@ember/object';
 import { readOnly } from '@ember/object/computed';
 import { getOwner } from '@ember/application';
+import { SeriesConfig, SeriesType } from 'navi-core/models/line-chart';
+import { Args as BaseArgs } from './base';
+import { Args as LineChartArgs } from '../navi-visualizations/line-chart';
 
-export default class NaviVisualizationConfigLineChartComponent extends Component {
-  curveOptions = ['line', 'spline', 'step'];
+type Style = LineChartArgs['options']['style'];
+
+type Options = LineChartArgs['options'];
+type Args = BaseArgs<Options> & {
+  type: unknown;
+};
+export default class NaviVisualizationConfigLineChartComponent extends Component<Args> {
+  curveOptions = <const>['line', 'spline', 'step'];
 
   /**
-   * @property {String} typePrefix - prefix for the line chart component
+   * prefix for the line chart component
    */
   typePrefix = 'navi-visualization-config/chart-type/';
 
   /**
-   * @property {Boolean} showStackOption - whether to display the `stacked` toggle
+   * whether to display the `stacked` toggle
    */
   @computed('args.{request,type}')
   get showStackOption() {
@@ -35,34 +44,32 @@ export default class NaviVisualizationConfigLineChartComponent extends Component
     return visualizationManifest.hasGroupBy(request) || visualizationManifest.hasMultipleMetrics(request);
   }
 
-  @readOnly('args.options.axis.y.series.config') seriesConfig!: unknown;
+  @readOnly('args.options.axis.y.series.config') seriesConfig!: SeriesConfig;
 
-  @readOnly('args.options.axis.y.series.type') seriesType!: string;
+  @readOnly('args.options.axis.y.series.type') seriesType!: SeriesType;
 
   /**
-   * Method to replace the seriesConfig in visualization config object.
+   * Replace the seriesConfig in visualization config object.
    *
-   * @method onUpdateConfig
-   * @param {Object} seriesConfig
+   * @param seriesConfig
    */
   @action
-  onUpdateSeriesConfig(seriesConfig) {
+  onUpdateSeriesConfig(seriesConfig: SeriesConfig) {
     const newOptions = { ...this.args.options };
-    set(newOptions, 'axis.y.series.config', seriesConfig);
+    set(newOptions.axis.y.series, 'config', seriesConfig);
     this.args.onUpdateConfig(newOptions);
   }
 
   /**
    * Updates line chart style
    *
-   * @method onUpdateStyle
-   * @param {String} field - which setting is getting updated, currently `curve` and `area`
-   * @param {String|Boolean} - value to update the setting with.
+   * @param field - which setting is getting updated, currently `curve` and `area`
+   * @param value - value to update the setting with.
    */
   @action
-  onUpdateStyle(field: string, value: string | boolean) {
-    let newOptions = { ...this.args.options };
-    newOptions.style = Object.assign({}, newOptions.style, { [field]: value });
+  onUpdateStyle<StyleOption extends keyof Style>(field: StyleOption, value: Style[StyleOption]) {
+    let newOptions = { style: {}, ...this.args.options };
+    set(newOptions.style, field, value);
     this.args.onUpdateConfig(newOptions);
   }
 }

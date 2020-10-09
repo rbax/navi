@@ -7,7 +7,7 @@ import { set, get, computed } from '@ember/object';
 import { attr } from '@ember-data/model';
 import ChartVisualization from './chart-visualization';
 import { validator, buildValidations } from 'ember-cp-validations';
-import { METRIC_SERIES, DIMENSION_SERIES, DATE_TIME_SERIES, chartTypeForRequest } from 'navi-core/utils/chart-data';
+import { DIMENSION_SERIES, DATE_TIME_SERIES, chartTypeForRequest } from 'navi-core/utils/chart-data';
 import RequestFragment from './bard-request-v2/request';
 import { ResponseV1 } from 'navi-data/serializers/facts/interface';
 
@@ -22,14 +22,6 @@ const Validations = buildValidations(
     //Global Validation
     [`${SERIES_PATH}.type`]: validator('chart-type'),
 
-    //Metric Series Validation
-    [`${CONFIG_PATH}.metrics`]: validator('request-metrics', {
-      disabled: computed('chartType', function() {
-        return this.chartType !== METRIC_SERIES;
-      }),
-      dependentKeys: ['model._request.columns.[]']
-    }),
-
     [`${CONFIG_PATH}.timeGrain`]: validator('request-time-grain', {
       disabled: computed('chartType', function() {
         return this.chartType !== DATE_TIME_SERIES;
@@ -38,31 +30,12 @@ const Validations = buildValidations(
     }),
 
     //Dimension Series Validations
-    [`${CONFIG_PATH}.metric`]: validator('request-metric-exist', {
+    [`${CONFIG_PATH}.metricCid`]: validator('request-metric-exist', {
       disabled: computed('chartType', function() {
         return this.chartType !== DIMENSION_SERIES && this.chartType !== DATE_TIME_SERIES;
       }),
       dependentKeys: ['model._request.columns.[]']
-    }),
-
-    [`${CONFIG_PATH}.dimensions`]: [
-      validator(
-        'length',
-        { min: 1 },
-        {
-          disabled: computed('chartType', function() {
-            return this.chartType !== DIMENSION_SERIES;
-          }),
-          dependentKeys: ['model._request.columns.[]']
-        }
-      ),
-      validator('request-filters', {
-        disabled: computed('chartType', function() {
-          return this.chartType !== DIMENSION_SERIES;
-        }),
-        dependentKeys: ['model._request.filters.@each.values']
-      })
-    ]
+    })
   },
   {
     //Global Validation Options
@@ -74,33 +47,74 @@ const Validations = buildValidations(
   }
 );
 
-export default class LineChartVisualization extends ChartVisualization.extend(Validations) {
+export type SeriesType = MetricSeries['type'] | DimensionSeries['type'] | DateTimeSeries['type'];
+export type SeriesConfig = MetricSeries['config'] | DimensionSeries['config'] | DateTimeSeries['config'];
+
+export type MetricSeries = {
+  type: 'metric';
+  config: {};
+};
+
+export type DimensionSeries = {
+  type: 'dimension';
+  config: {
+    metricCid: string;
+  };
+};
+
+export type DateTimeSeries = {
+  type: 'dateTime';
+  config: {
+    timeGrain: string; // TODO more specific?
+    metricCid: string;
+  };
+};
+
+type NullSeries = { type: null; config: {} };
+
+export type LineChartConfig = {
+  type: 'line-chart';
+  version: 2;
+  metadata: {
+    style?: {
+      curve?: string;
+      area?: boolean;
+      stacked?: boolean;
+    };
+    axis: {
+      y: {
+        series: MetricSeries | DimensionSeries | DateTimeSeries | NullSeries;
+      };
+    };
+  };
+};
+
+export default class LineChartVisualization extends ChartVisualization.extend(Validations) implements LineChartConfig {
   @attr('string', { defaultValue: 'line-chart' })
-  type!: string;
-  @attr('number', { defaultValue: 1 })
-  version!: number;
+  type!: LineChartConfig['type'];
+  @attr('number', { defaultValue: 2 })
+  version!: LineChartConfig['version'];
   @attr({
-    defaultValue: () => {
+    defaultValue(): LineChartConfig['metadata'] {
       return { axis: { y: { series: { type: null, config: {} } } } };
     }
   })
-  metadata!: unknown;
+  metadata!: LineChartConfig['metadata'];
 
   /**
    * Rebuild config based on request and response
    *
-   * @method rebuildConfig
-   * @param {MF.Fragment} request - request model fragment
-   * @param {Object} response - response object
-   * @return {Object} this object
+   * @param request - request model fragment
+   * @param response - response object
+   * @return this object
    */
   rebuildConfig(request: RequestFragment, response: ResponseV1) {
     this.isValidForRequest(request);
 
     const chartType = chartTypeForRequest(request);
-    const seriesBuilder = this.getSeriesBuilder(chartType).bind(this);
-    const series = seriesBuilder(CONFIG_PATH, this.validations, request, response);
-    const style = this.getWithDefault('metadata.style', {});
+    const buildSeries = this.getSeriesBuilder(chartType).bind(this);
+    const series = buildSeries(CONFIG_PATH, this.validations, request, response);
+    const { style = {} } = this.metadata;
 
     set(this, 'metadata', {
       style,

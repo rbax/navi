@@ -31,11 +31,12 @@ import { API_DATE_FORMAT_STRING } from 'navi-data/utils/date';
 //@ts-ignore
 import tooltipLayout from '../templates/chart-tooltips/dimension';
 import ChartAxisDateTimeFormats from 'navi-core/utils/chart-axis-date-time-formats';
-import { getRequestDimensions, groupDataByDimensions } from 'navi-core/utils/chart-data';
-import BaseChartBuilder from './base';
+import { buildDimensionSeriesValues, getRequestDimensions, groupDataByDimensions } from 'navi-core/utils/chart-data';
+import BaseChartBuilder, { C3Row } from './base';
 import RequestFragment from 'navi-core/models/bard-request-v2/request';
 import { ResponseV1 } from 'navi-data/serializers/facts/interface';
 import { tracked } from '@glimmer/tracking';
+import { DimensionSeries } from 'navi-core/models/line-chart';
 
 type ResponseRow = ResponseV1['rows'][number];
 
@@ -48,7 +49,7 @@ export default class DimensionChartBuilder extends BaseChartBuilder {
    * @param request - request used to query fact data
    * @returns name of series given row belongs to
    */
-  getSeriesName(row: ResponseRow, _config: unknown, request: RequestFragment): string {
+  getSeriesName(row: ResponseRow, _config: DimensionSeries['config'], request: RequestFragment): string {
     // let dimensionOrder = config.dimensionOrder;
 
     return request.dimensionColumns.map(dim => row[dim.canonicalName]).join(',');
@@ -57,7 +58,7 @@ export default class DimensionChartBuilder extends BaseChartBuilder {
   /**
    * @inheritdoc
    */
-  getXValue(row: ResponseRow, _config: unknown, request: RequestFragment): string {
+  getXValue(row: ResponseRow, _config: DimensionSeries['config'], request: RequestFragment): string {
     // expects timeGrainColumn values to be a readable moment input
     const date = row[request.timeGrainColumn.canonicalName] as MomentInput;
     return moment(date).format(API_DATE_FORMAT_STRING);
@@ -66,7 +67,7 @@ export default class DimensionChartBuilder extends BaseChartBuilder {
   /**
    * @inheritdoc
    */
-  buildData(response: ResponseV1, config: unknown, request: RequestFragment) {
+  buildData(response: ResponseV1, config: DimensionSeries['config'], request: RequestFragment): C3Row[] {
     const timeGrainColumn = request.timeGrainColumn.canonicalName;
     const { timeGrain, interval } = request;
     assert('request should have an interval', interval);
@@ -79,11 +80,12 @@ export default class DimensionChartBuilder extends BaseChartBuilder {
     // Support different `dateTime` formats by mapping them to a standard
     const buildDateKey = (dateTime: MomentInput) => moment(dateTime).format(API_DATE_FORMAT_STRING);
 
-    const { metric: metricCid } = config;
+    const { metricCid } = config;
     const metric = request.columns.find(c => c.cid === metricCid);
+    const dimensionSeriesValues = buildDimensionSeriesValues(request, response.rows);
     const dimensions = getRequestDimensions(request);
-    const seriesKey = config.dimensions.map(s => dimensions.map(d => s.values[d.cid]).join('|')); // Build the series required
-    const seriesName = config.dimensions.map(s => s.name); // Get all the series names
+    const seriesKey = dimensionSeriesValues.map(s => dimensions.map(d => s.values[d.cid]).join('|')); // Build the series required
+    const seriesName = dimensionSeriesValues.map(s => s.name); // Get all the series names
     const byDate = new DataGroup(response.rows, row => buildDateKey(row[timeGrainColumn] as string)); // Group by dates for easier lookup
 
     // For each unique date, build the series
@@ -101,7 +103,7 @@ export default class DimensionChartBuilder extends BaseChartBuilder {
       let byDim = groupDataByDimensions(dateRows, dimensions);
 
       // the data for date used in the C3 chart
-      let dataForDate = { x };
+      let dataForDate = { x } as C3Row;
 
       // Adding the series to the keys
       seriesKey.forEach((s, index) => {
@@ -135,7 +137,7 @@ export default class DimensionChartBuilder extends BaseChartBuilder {
   /**
    * @inheritdoc
    */
-  buildTooltip(_config: unknown, _request: RequestFragment) {
+  buildTooltip(_config: DimensionSeries['config'], _request: RequestFragment) {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     let builder = this;
 

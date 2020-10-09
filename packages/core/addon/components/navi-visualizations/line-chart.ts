@@ -23,6 +23,8 @@ import { VisualizationModel } from './table';
 import BaseChartBuilder from 'navi-core/chart-builders/base';
 import { ResponseV1 } from 'navi-data/addon/serializers/facts/interface';
 import RequestFragment from 'navi-core/models/bard-request-v2/request';
+import { LineChartConfig } from 'navi-core/models/line-chart';
+import { buildDimensionSeriesValues } from 'navi-core/utils/chart-data';
 
 const DEFAULT_OPTIONS = {
   style: {
@@ -42,9 +44,7 @@ const DEFAULT_OPTIONS = {
     y: {
       series: {
         type: 'metric',
-        config: {
-          metrics: []
-        }
+        config: {}
       },
       tick: {
         format: (val: number) => numeral(val).format('0.00a'),
@@ -68,8 +68,7 @@ const DEFAULT_OPTIONS = {
 
 export type Args = {
   model: VisualizationModel;
-  options: any;
-  // options: TableVisualizationMetadata['metadata'];
+  options: LineChartConfig['metadata'];
 };
 
 export default class LineChart extends ChartBuildersBase<Args> {
@@ -85,7 +84,7 @@ export default class LineChart extends ChartBuildersBase<Args> {
   classNames = ['line-chart-widget'];
 
   /**
-   * @property {Object} builder - builder based on series type
+   * builder based on series type
    */
   @computed('seriesConfig.type')
   get builder(): BaseChartBuilder {
@@ -100,7 +99,7 @@ export default class LineChart extends ChartBuildersBase<Args> {
   }
 
   /**
-   * @property {Object} config - config options for the chart
+   * config options for the chart
    */
   @computed('args.options', 'dataConfig')
   get config() {
@@ -122,7 +121,7 @@ export default class LineChart extends ChartBuildersBase<Args> {
   }
 
   /**
-   * @property {Object} yAxisLabelConfig - y axis label config options for the chart
+   * y axis label config options for the chart
    */
   get yAxisLabelConfig() {
     let metricDisplayName = null;
@@ -141,7 +140,7 @@ export default class LineChart extends ChartBuildersBase<Args> {
   }
 
   /**
-   * @property {Object} seriesConfig - options for determining chart series
+   * options for determining chart series
    */
   @computed('args.options')
   get seriesConfig() {
@@ -169,7 +168,16 @@ export default class LineChart extends ChartBuildersBase<Args> {
   }
 
   /**
-   * @property {Array} seriesData - chart series data
+   * dimension series with values
+   */
+  @computed('request', 'response')
+  get dimensionSeriesValues() {
+    const { request, response } = this;
+    return buildDimensionSeriesValues(request, response.rows);
+  }
+
+  /**
+   * chart series data
    */
   @computed('request', 'response', 'builder', 'seriesConfig.config')
   get seriesData() {
@@ -178,12 +186,11 @@ export default class LineChart extends ChartBuildersBase<Args> {
   }
 
   /**
-   * @property {Array} seriesDataGroups - chart series groups for stacking
+   * chart series groups for stacking
    */
-  @computed('args.options', 'seriesConfig', 'namespace')
+  @computed('args.options', 'request', 'dimensionSeriesValues', 'seriesConfig', 'namespace')
   get seriesDataGroups() {
-    const { request, seriesConfig } = this;
-    const seriesType = seriesConfig.type;
+    const { request, dimensionSeriesValues, seriesConfig } = this;
     const newOptions = merge({}, DEFAULT_OPTIONS, this.args.options);
     const { stacked } = newOptions.style;
 
@@ -192,9 +199,9 @@ export default class LineChart extends ChartBuildersBase<Args> {
     }
 
     // if stacked, return [[ "Dimension 1", "Dimension 2", ... ]] or [[ "Metric 1", "Metric 2", ... ]]
-    if (seriesType === 'dimension') {
-      return [seriesConfig.config.dimensions.map(dimension => dimension.name)];
-    } else if (seriesType === 'metric') {
+    if (seriesConfig.type === 'dimension') {
+      return [dimensionSeriesValues];
+    } else if (seriesConfig.type === 'metric') {
       return [request.metricColumns.map(c => c.displayName)];
     }
 
@@ -202,7 +209,7 @@ export default class LineChart extends ChartBuildersBase<Args> {
   }
 
   /**
-   * @property {Object} dataConfig - configuration for chart x and y values
+   * configuration for chart x and y values
    */
   @computed('c3ChartType', 'seriesData', 'seriesDataGroups')
   get dataConfig() {
@@ -228,7 +235,7 @@ export default class LineChart extends ChartBuildersBase<Args> {
   }
 
   /**
-   * @property {String} c3ChartType - c3 chart type to determine line behavior
+   * c3 chart type to determine line behavior
    */
   @computed('args.options', 'chartType')
   get c3ChartType() {
@@ -245,7 +252,7 @@ export default class LineChart extends ChartBuildersBase<Args> {
   }
 
   /**
-   * @property {Object} dataSelectionConfig - config for selecting data points on chart
+   * config for selecting data points on chart
    */
   @computed('args.model.[]')
   get dataSelectionConfig() {
@@ -255,7 +262,7 @@ export default class LineChart extends ChartBuildersBase<Args> {
   }
 
   /**
-   * @property {String} tooltipComponentName - name of the tooltip component
+   * name of the tooltip component
    */
   get tooltipComponentName() {
     const guid = guidFor(this);
@@ -265,7 +272,7 @@ export default class LineChart extends ChartBuildersBase<Args> {
   }
 
   /**
-   * @property {Ember.Component} tooltipComponent - component used for rendering HTMLBars templates
+   * component used for rendering HTMLBars templates
    */
   @computed('firstModel', 'dataConfig')
   get tooltipComponent() {
@@ -294,7 +301,7 @@ export default class LineChart extends ChartBuildersBase<Args> {
   }
 
   /**
-   * @property {Object} xAxisTickValuesByGrain - x axis tick positions for day/week/month grain on year chart grain
+   * x axis tick positions for day/week/month grain on year chart grain
    */
   get xAxisTickValuesByGrain() {
     const dayValues = [];
@@ -316,7 +323,7 @@ export default class LineChart extends ChartBuildersBase<Args> {
   }
 
   /**
-   * @property {Object} xAxisTickValues - explicity specifies x axis tick positions for year chart grain
+   * explicity specifies x axis tick positions for year chart grain
    */
   @computed('args.model.firstObject', 'seriesConfig')
   get xAxisTickValues() {
@@ -341,7 +348,7 @@ export default class LineChart extends ChartBuildersBase<Args> {
   }
 
   /**
-   * @property {Object} chartTooltip - configuration for tooltip
+   * configuration for tooltip
    */
   @computed('seriesConfig.config', 'dataConfig.data.json', 'tooltipComponent', 'firstModel')
   get chartTooltip() {
@@ -351,7 +358,7 @@ export default class LineChart extends ChartBuildersBase<Args> {
     const seriesConfig = this.seriesConfig.config;
 
     return {
-      contents(tooltipData) {
+      contents(tooltipData: { x: unknown }[]) {
         /*
          * Since tooltipData.x only contains the index value, map it
          * to the raw x value for better formatting
@@ -377,8 +384,8 @@ export default class LineChart extends ChartBuildersBase<Args> {
   }
 
   /**
-   * @param  val - number to format
-   * @returns  formatted number
+   * @param val - number to format
+   * @returns formatted number
    */
   formattingFunction = (val: number) => numeral(val).format('0.00a');
 
@@ -387,25 +394,16 @@ export default class LineChart extends ChartBuildersBase<Args> {
    */
   @computed('formattingFunction')
   get yAxisDataFormat() {
-    const formattingFunction = this.formattingFunction;
-    return {
-      axis: {
-        y: {
-          tick: {
-            format: formattingFunction
-          }
-        }
-      }
-    };
+    const format = this.formattingFunction;
+    return { axis: { y: { tick: { format } } } };
   }
 
   /**
    * Fires before the element is destroyed
-   * @method willDestroyElement
    * @override
    */
-  willDestroyElement() {
-    super.willDestroyElement(...arguments);
+  willDestroy() {
+    super.willDestroy();
     this._removeTooltipFromRegistry();
   }
 

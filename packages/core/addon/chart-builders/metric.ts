@@ -23,8 +23,9 @@ import { API_DATE_FORMAT_STRING } from 'navi-data/utils/date';
 import { computed } from '@ember/object';
 import { ResponseV1 } from 'navi-data/serializers/facts/interface';
 import RequestFragment from 'navi-core/models/bard-request-v2/request';
-import BaseChartBuilder from './base';
+import BaseChartBuilder, { C3Row } from './base';
 import { tracked } from '@glimmer/tracking';
+import { MetricSeries } from 'navi-core/models/line-chart';
 
 type ResponseRow = ResponseV1['rows'][number];
 
@@ -34,7 +35,7 @@ export default class MetricChartBuilder extends BaseChartBuilder {
   /**
    * @inheritdoc
    */
-  getXValue(row: ResponseRow, _config: unknown, request: RequestFragment): string {
+  getXValue(row: ResponseRow, _config: MetricSeries['config'], request: RequestFragment): string {
     // expects timeGrainColumn values to be a readable moment input
     const date = row[request.timeGrainColumn.canonicalName] as MomentInput;
     return moment(date).format(API_DATE_FORMAT_STRING);
@@ -43,7 +44,7 @@ export default class MetricChartBuilder extends BaseChartBuilder {
   /**
    * @inheritdoc
    */
-  buildData(response: ResponseV1, config: unknown, request: RequestFragment) {
+  buildData(response: ResponseV1, config: MetricSeries['config'], request: RequestFragment): C3Row[] {
     const timeGrainColumn = request.timeGrainColumn.canonicalName;
     const { timeGrain, interval } = request;
     assert('request should have an interval', interval);
@@ -90,7 +91,7 @@ export default class MetricChartBuilder extends BaseChartBuilder {
   /**
    * @inheritdoc
    */
-  buildTooltip(_config: unknown, _request: RequestFragment) {
+  buildTooltip(_config: MetricSeries['config'], _request: RequestFragment) {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     let builder = this;
 

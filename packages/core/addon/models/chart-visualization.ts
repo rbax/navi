@@ -4,15 +4,7 @@
  */
 import VisualizationBase from './visualization';
 import { get } from '@ember/object';
-import { topN, maxDataByDimensions } from 'navi-core/utils/data';
-import {
-  METRIC_SERIES,
-  DIMENSION_SERIES,
-  DATE_TIME_SERIES,
-  getRequestDimensions,
-  buildDimensionSeriesValues,
-  ChartType
-} from 'navi-core/utils/chart-data';
+import { METRIC_SERIES, DIMENSION_SERIES, DATE_TIME_SERIES, ChartType } from 'navi-core/utils/chart-data';
 import RequestFragment from 'navi-core/models/bard-request-v2/request';
 import { ResponseV1 } from 'navi-data/serializers/facts/interface';
 
@@ -42,13 +34,12 @@ export default class ChartVizualization extends VisualizationBase {
    * @param response - response object
    * @returns series config object
    */
-  buildDimensionSeries(config: unknown, validations: unknown, request: RequestFragment, response: ResponseV1) {
+  buildDimensionSeries(config: string, validations: unknown, request: RequestFragment, _response: ResponseV1) {
     const metricPath = `${config}.metric`;
     const dimensionsPath = `${config}.dimensions`;
     const validationAttrs = get(validations, 'attrs');
 
     const isMetricValid = get(validationAttrs, `${metricPath}.isValid`);
-    const areDimensionsValid = get(validationAttrs, `${dimensionsPath}.isValid`);
 
     const metricCid = get(this, metricPath);
     const metric =
@@ -56,21 +47,10 @@ export default class ChartVizualization extends VisualizationBase {
         ? request.metricColumns.find(({ cid }) => cid === metricCid)
         : request.metricColumns[0];
 
-    const dimensionOrder = getRequestDimensions(request);
-    const responseRows = topN(
-      maxDataByDimensions(response.rows, dimensionOrder, metric.canonicalName),
-      metric.canonicalName,
-      10
-    );
-    const existingDimensions = get(this, dimensionsPath);
-    const dimensions =
-      existingDimensions && areDimensionsValid ? existingDimensions : buildDimensionSeriesValues(request, responseRows);
-
     return {
       type: DIMENSION_SERIES,
       config: {
-        metric: metric.cid,
-        dimensions
+        metric: metric.cid
       }
     };
   }
@@ -84,7 +64,7 @@ export default class ChartVizualization extends VisualizationBase {
    * @param response - response object
    * @returns series config object
    */
-  buildMetricSeries(_config: unknown, _validations: unknown, _request: RequestFragment, _response: ResponseV1) {
+  buildMetricSeries(_config: string, _validations: unknown, _request: RequestFragment, _response: ResponseV1) {
     return {
       type: METRIC_SERIES,
       config: {}
@@ -100,7 +80,7 @@ export default class ChartVizualization extends VisualizationBase {
    * @param response - response object
    * @returns series config object
    */
-  buildDateTimeSeries(_config: unknown, _validations: unknown, request: RequestFragment, _response: ResponseV1) {
+  buildDateTimeSeries(_config: string, _validations: unknown, request: RequestFragment, _response: ResponseV1) {
     return {
       type: DATE_TIME_SERIES,
       config: {
