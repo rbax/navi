@@ -14,7 +14,6 @@ import { dataByDimensions } from 'navi-core/utils/data';
 import { values, reject } from 'lodash-es';
 import RequestFragment from '../../models/bard-request-v2/request';
 import { ResponseV1 } from 'navi-data/addon/serializers/facts/interface';
-import { getRequestDimensions } from 'navi-core/utils/chart-data';
 import ColumnMetadataModel from 'navi-data/addon/models/metadata/column';
 
 type Args = {
@@ -85,7 +84,7 @@ export default class NaviVisualizationConfigSeriesChartComponent extends Compone
       args: { request },
       dataByDimensions
     } = this;
-    const dimensions = getRequestDimensions(request);
+    const dimensions = request.nonTimeGrainDimensions;
     const keys = dataByDimensions.getKeys();
 
     // Build a series object for each series key
